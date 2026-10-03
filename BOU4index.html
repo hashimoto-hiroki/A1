@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>棒人間ウォーク</title>
+
+<style>
+body{
+    margin:0;
+    overflow:hidden;
+    touch-action:none;
+    font-family:sans-serif;
+    background:#d8f1ff;
+}
+
+canvas{
+    display:block;
+    background:linear-gradient(#b8e8ff,#ffffff);
+}
+
+#timer{
+    position:fixed;
+    top:12px;
+    right:20px;
+    font-size:32px;
+    font-weight:bold;
+    z-index:10;
+}
+
+#startScreen,
+#goalScreen{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.45);
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    z-index:30;
+}
+
+#goalScreen{
+    display:none;
+}
+
+.bigBtn{
+    padding:20px 50px;
+    font-size:40px;
+    border:none;
+    border-radius:20px;
+    background:#222;
+    color:white;
+}
+
+#goalText{
+    color:white;
+    font-size:54px;
+    text-align:center;
+    margin-bottom:25px;
+}
+
+#controls{
+    position:fixed;
+    bottom:0;
+    left:0;
+    width:100%;
+    display:flex;
+    justify-content:space-between;
+    padding:15px;
+    box-sizing:border-box;
+}
+
+.side{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+}
+
+.ctrl{
+    width:130px;
+    height:100px;
+    font-size:18px;
+    border:none;
+    border-radius:20px;
+    background:#222;
+    color:white;
+}
+
+.ctrl:active{
+    transform:scale(0.95);
+}
+
+.label{
+    position:absolute;
+    bottom:125px;
+    font-size:28px;
+    font-weight:bold;
+}
+
+#leftLabel{ left:90px; }
+#rightLabel{ right:90px; }
+
+</style>
+</head>
+<body>
+
+<div id="timer">0.00</div>
+
+<div id="startScreen">
+    <button class="bigBtn" id="startBtn">START</button>
+</div>
+
+<div id="goalScreen">
+    <div id="goalText"></div>
+    <button class="bigBtn" id="restartBtn">RESTART</button>
+</div>
+
+<div class="label" id="leftLabel">左足</div>
+<div class="label" id="rightLabel">右足</div>
+
+<canvas id="game"></canvas>
+
+<div id="controls">
+
+    <div class="side">
+        <button class="ctrl" id="leftCW">左足 ↻</button>
+        <button class="ctrl" id="leftCCW">左足 ↺</button>
+    </div>
+
+    <div class="side">
+        <button class="ctrl" id="rightCW">右足 ↻</button>
+        <button class="ctrl" id="rightCCW">右足 ↺</button>
+    </div>
+
+</div>
+
+<script>
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+function resize(){
+    canvas.width = innerWidth;
+    canvas.height = innerHeight;
+}
+resize();
+addEventListener("resize", resize);
+
+let running = false;
+let finished = false;
+
+let startTime = 0;
+let elapsed = 0;
+
+const GOAL_X = 2500;
+
+const player = {
+    x:120,
+    speed:0,
+    tilt:0
+};
+
+// 足角度
+let leftAngle = 0;
+let rightAngle = 0;
+
+// 足の目標角度
+let leftTarget = 0;
+let rightTarget = 0;
+
+// 前回の足位置
+let prevLeftFootX = 0;
+let prevRightFootX = 0;
+
+function resetGame(){
+
+    running = false;
+    finished = false;
+
+    elapsed = 0;
+
+    player.x = 120;
+    player.speed = 0;
+    player.tilt = 0;
+
+    leftAngle = 0;
+    rightAngle = 0;
+
+    leftTarget = 0;
+    rightTarget = 0;
+
+    document.getElementById("timer").textContent = "0.00";
+
+    document.getElementById("goalScreen").style.display = "none";
+    document.getElementById("startScreen").style.display = "flex";
+}
+
+document.getElementById("startBtn").onclick = ()=>{
+
+    running = true;
+    startTime = performance.now();
+
+    document.getElementById("startScreen").style.display = "none";
+};
+
+document.getElementById("restartBtn").onclick = ()=>{
+    resetGame();
+};
+
+function rotateLeg(side, dir){
+
+    if(!running || finished) return;
+
+    const amount = 0.55;
+
+    if(side === "left"){
+
+        if(dir === "cw"){
+            leftTarget += amount;
+        }else{
+            leftTarget -= amount;
+        }
+
+    }else{
+
+        if(dir === "cw"){
+            rightTarget += amount;
+        }else{
+            rightTarget -= amount;
+        }
+    }
+}
+
+function addBtn(id, side, dir){
+
+    document.getElementById(id)
+    .addEventListener("pointerdown", ()=>{
+        rotateLeg(side, dir);
+    });
+}
+
+addBtn("leftCW","left","cw");
+addBtn("leftCCW","left","ccw");
+addBtn("rightCW","right","cw");
+addBtn("rightCCW","right","ccw");
+
+function getFoot(angle){
+
+    const len = 58;
+
+    return {
+        x: Math.sin(angle) * len,
+        y: Math.cos(angle) * len
+    };
+}
+
+function update(){
+
+    if(running && !finished){
+
+        elapsed = (performance.now()-startTime)/1000;
+
+        document.getElementById("timer").textContent =
+            elapsed.toFixed(2);
+
+        // ゆっくり中立へ戻る
+        leftTarget *= 0.95;
+        rightTarget *= 0.95;
+
+        // 滑らかに追従
+        leftAngle += (leftTarget - leftAngle) * 0.18;
+        rightAngle += (rightTarget - rightAngle) * 0.18;
+
+        // 足先位置
+        const leftFoot = getFoot(leftAngle);
+        const rightFoot = getFoot(rightAngle);
+
+        // 地面を後ろに蹴った時だけ進む
+        const leftPush = prevLeftFootX - leftFoot.x;
+        const rightPush = prevRightFootX - rightFoot.x;
+
+        let moveForce = 0;
+
+        if(leftPush > 0){
+            moveForce += leftPush * 0.12;
+        }
+
+        if(rightPush > 0){
+            moveForce += rightPush * 0.12;
+        }
+
+        player.speed += moveForce;
+
+        // 保存
+        prevLeftFootX = leftFoot.x;
+        prevRightFootX = rightFoot.x;
+
+        // 摩擦
+        player.speed *= 0.93;
+
+        player.x += player.speed;
+
+        // 傾き
+        player.tilt =
+            (leftAngle + rightAngle) * 0.08;
+
+        if(player.x >= GOAL_X){
+
+            finished = true;
+            running = false;
+
+            document.getElementById("goalScreen").style.display = "flex";
+
+            document.getElementById("goalText").innerHTML =
+                "GOAL!<br>" +
+                elapsed.toFixed(2) +
+                " 秒";
+        }
+    }
+}
+
+function drawLeg(baseX, baseY, angle){
+
+    const foot = getFoot(angle);
+
+    ctx.beginPath();
+    ctx.moveTo(baseX, baseY);
+    ctx.lineTo(baseX + foot.x, baseY + foot.y);
+    ctx.stroke();
+}
+
+function drawStickman(x,y){
+
+    ctx.save();
+
+    ctx.translate(x,y);
+    ctx.rotate(player.tilt);
+
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 6;
+
+    // 頭
+    ctx.beginPath();
+    ctx.arc(0,-75,24,0,Math.PI*2);
+    ctx.stroke();
+
+    // 胴体
+    ctx.beginPath();
+    ctx.moveTo(0,-50);
+    ctx.lineTo(0,20);
+    ctx.stroke();
+
+    // 腕
+    ctx.beginPath();
+    ctx.moveTo(-35,-15);
+    ctx.lineTo(35,-15);
+    ctx.stroke();
+
+    drawLeg(0,20,leftAngle);
+    drawLeg(0,20,rightAngle);
+
+    ctx.restore();
+}
+
+function draw(){
+
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    const groundY = canvas.height - 170;
+
+    // 地面
+    ctx.fillStyle = "#68c868";
+    ctx.fillRect(0, groundY + 60, canvas.width, 300);
+
+    // 地面ライン
+    ctx.strokeStyle = "#999";
+    ctx.lineWidth = 3;
+
+    for(let i=0;i<40;i++){
+
+        const x = i * 180;
+
+        ctx.beginPath();
+        ctx.moveTo(x, groundY + 65);
+        ctx.lineTo(x + 70, groundY + 65);
+        ctx.stroke();
+    }
+
+    // ゴール
+    ctx.fillStyle = "black";
+    ctx.fillRect(GOAL_X, groundY - 100, 8, 180);
+
+    ctx.fillStyle = "red";
+
+    ctx.beginPath();
+    ctx.moveTo(GOAL_X + 8, groundY - 100);
+    ctx.lineTo(GOAL_X + 80, groundY - 75);
+    ctx.lineTo(GOAL_X + 8, groundY - 50);
+    ctx.fill();
+
+    drawStickman(player.x, groundY);
+
+    // 残距離
+    ctx.fillStyle = "black";
+    ctx.font = "30px sans-serif";
+
+    const remain = Math.max(0,(GOAL_X-player.x)/10);
+
+    ctx.fillText(
+        "GOALまで " + remain.toFixed(1) + "m",
+        20,
+        45
+    );
+}
+
+function loop(){
+
+    update();
+    draw();
+
+    requestAnimationFrame(loop);
+}
+
+resetGame();
+loop();
+
+</script>
+</body>
+</html>
